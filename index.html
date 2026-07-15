@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tate-align — 全角対応・縦揃え整形ツール</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>tate-align</h1>
+    <p class="tagline">全角が混ざってもズレない縦揃え</p>
+    <p class="privacy">入力はブラウザ内でのみ処理されます(サーバー送信なし)</p>
+  </header>
+
+  <main class="workbench">
+    <!-- 整形元 -->
+    <section class="pane pane-input">
+      <label class="pane-label" for="input">整形元</label>
+      <textarea id="input" class="mono" spellcheck="false" autocapitalize="off" autocomplete="off"
+        placeholder="int a = 0; // 速度&#10;int speed = 10; // 加速度の設定&#10;long t = 3; // 時間"></textarea>
+    </section>
+
+    <!-- オプション列 -->
+    <section class="pane pane-options" aria-label="オプション">
+      <div class="opt">
+        <label for="mode">モード</label>
+        <select id="mode">
+          <option value="auto">自動判定</option>
+          <option value="code">コード</option>
+          <option value="table">表</option>
+        </select>
+        <p id="mode-info" class="hint"></p>
+      </div>
+
+      <div class="opt">
+        <span class="opt-label">埋め方式</span>
+        <div class="toggle" role="group" aria-label="埋め方式">
+          <button id="fill-space" type="button" aria-pressed="true">半角スペース</button>
+          <button id="fill-tab" type="button" aria-pressed="false">タブ</button>
+        </div>
+        <p id="tab-note" class="hint warn" hidden>
+          タブ揃えは貼り付け先のタブ幅が異なると見た目が変わります(このツールのタブ幅設定を合わせてください)。
+        </p>
+      </div>
+
+      <div class="opt" id="gap-field">
+        <label for="gap">ギャップ幅(1〜4)</label>
+        <input id="gap" type="number" min="1" max="4" value="1">
+      </div>
+
+      <div class="opt">
+        <label for="tabWidth">タブ幅</label>
+        <input id="tabWidth" type="number" min="1" max="16" value="4">
+      </div>
+
+      <div class="opt opt-inline">
+        <input id="alignEquals" type="checkbox" checked>
+        <label for="alignEquals">=揃え(コードモード)</label>
+      </div>
+
+      <div class="opt">
+        <label for="separators">区切り欄</label>
+        <div class="sep-row">
+          <input id="separators" class="mono" type="text" value="\s,\t"
+            spellcheck="false" autocapitalize="off" autocomplete="off">
+          <button id="sep-reset" type="button">既定に戻す</button>
+        </div>
+        <p class="hint">カンマ区切り。<code>\s</code>=連続スペース / <code>\t</code>=タブ / <code>\,</code>=カンマ / その他は文字通り。</p>
+      </div>
+
+      <div class="opt">
+        <label for="lineEnding">改行コード</label>
+        <select id="lineEnding">
+          <option value="auto">自動(入力と同じ)</option>
+          <option value="LF">LF</option>
+          <option value="CRLF">CRLF</option>
+        </select>
+        <p id="le-info" class="hint"></p>
+      </div>
+    </section>
+
+    <!-- 整形後 -->
+    <section class="pane pane-output">
+      <div class="pane-head">
+        <label class="pane-label" for="output">整形後</label>
+        <button id="copy" type="button" class="copy-btn">コピー</button>
+      </div>
+      <textarea id="output" class="mono" readonly spellcheck="false"></textarea>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a href="https://github.com/" target="_blank" rel="noopener noreferrer">GitHub</a>
+    <span> · 素の HTML/CSS/JS · 完全オフライン動作</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
