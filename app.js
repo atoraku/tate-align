@@ -636,24 +636,26 @@
     if (copyBtn) copyBtn.addEventListener('click', function () {
       var text = state.lastOutput;
       var done = function () {
-        var old = copyBtn.textContent;
+        var old = 'コピー';
         copyBtn.textContent = 'コピーしました ✓';
         setTimeout(function () { copyBtn.textContent = old; }, 1500);
       };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done, function () {
-          copyBtn.textContent = 'コピー失敗(手動でコピーしてください)';
-        });
-      } else {
-        // file:// 等でクリップボード API が使えない場合
+      // フォールバック(file:// や API 拒否時)。textarea 経由のため改行は LF になる
+      var fallback = function () {
         try {
           output.focus();
           output.select();
-          document.execCommand('copy');
-          done();
+          var ok = document.execCommand('copy');
+          if (ok) done();
+          else copyBtn.textContent = 'コピー失敗(手動でコピーしてください)';
         } catch (err) {
           copyBtn.textContent = 'コピー失敗(手動でコピーしてください)';
         }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else {
+        fallback();
       }
     });
 
