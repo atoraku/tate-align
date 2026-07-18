@@ -148,6 +148,19 @@ button:hover { border-color: var(--accent); }
 
 #sep-reset { white-space: nowrap; font-size: 0.8rem; }
 
+.sep-chips { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.chips-label { color: var(--muted); font-size: 0.78rem; }
+.chip {
+  font-family: var(--mono);
+  min-width: 1.9rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+.chip:hover { border-color: var(--accent); }
+
+.reset-all-btn { width: 100%; font-size: 0.85rem; padding: 0.5rem 0.6rem; }
+
 .hint { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
 .hint code {
   font-family: var(--mono);

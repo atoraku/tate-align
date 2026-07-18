@@ -255,6 +255,72 @@
     assertEqual(T.parseSeparators('').length, 0);
   });
 
+  /* ========== ④ v1.1 追加分 ========== */
+
+  test('④ parseSeparators: ,, はリテラルカンマ', function () {
+    var toks = T.parseSeparators(',,');
+    assertEqual(toks.length, 1);
+    assertEqual(toks[0].type, 'literal');
+    assertEqual(toks[0].text, ',');
+  });
+
+  test('④ parseSeparators: \\s,\\t,, は3トークン(末尾リテラルカンマ)', function () {
+    var toks = T.parseSeparators('\\s,\\t,,');
+    assertEqual(toks.length, 3);
+    assertEqual(toks[0].type, 'spaces');
+    assertEqual(toks[1].type, 'tab');
+    assertEqual(toks[2].type, 'literal');
+    assertEqual(toks[2].text, ',');
+  });
+
+  test('④ parseSeparators: a,,b は3トークン(a / , / b)', function () {
+    var toks = T.parseSeparators('a,,b');
+    assertEqual(toks.length, 3);
+    assertEqual(toks[0].type, 'literal');
+    assertEqual(toks[0].text, 'a');
+    assertEqual(toks[1].type, 'literal');
+    assertEqual(toks[1].text, ',');
+    assertEqual(toks[2].type, 'literal');
+    assertEqual(toks[2].text, 'b');
+  });
+
+  test('④ 区切り欄 ,, での配列整形が例Eと同結果', function () {
+    var input = '{1,22,333},\n{444,5,66},';
+    var expected = '{1,   22, 333},\n{444, 5,  66},';
+    assertEqual(T.format(input, { mode: 'table', fill: 'space', gap: 1, separators: '\\s,\\t,,' }), expected);
+  });
+
+  test('④ splitLine: 行頭タブは \\t が区切りにあると空セル', function () {
+    var cells = T.splitLine('\t90', T.parseSeparators('\\s,\\t'), 4);
+    assertEqual(cells.length, 2);
+    assertEqual(cells[0], '');
+    assertEqual(cells[1], '90');
+  });
+
+  test('④ splitLine: \\t が区切りにないと行頭タブはインデント', function () {
+    // \t を欄から消すとタブは空白展開され、行頭タブはインデント扱い(空セルを作らない)
+    var cells = T.splitLine('\t90', T.parseSeparators('\\s'), 4);
+    assertEqual(cells.length, 1);
+    assertEqual(cells[0], '    90');
+  });
+
+  test('④ format: 行頭タブ行で第2列が揃う(先頭は空セル)', function () {
+    var input = '名前\t点数\n\t90\nAlexander\t100';
+    var expected = '名前       点数\n           90\nAlexander  100';
+    assertEqual(T.format(input, { mode: 'table', fill: 'space', gap: 2, separators: '\\s,\\t' }), expected);
+  });
+
+  test('④ defaultOptions() が既定値一式を返す', function () {
+    var d = T.defaultOptions();
+    assertEqual(d.mode, 'auto');
+    assertEqual(d.fill, 'space');
+    assertEqual(d.gap, 1);
+    assertEqual(d.tabWidth, 4);
+    assertEqual(d.alignEquals, true);
+    assertEqual(d.separators, T.DEFAULT_SEPARATORS);
+    assertEqual(d.lineEnding, 'auto');
+  });
+
   /* ========== レンダリング ========== */
 
   var passed = results.filter(function (r) { return r.ok; }).length;

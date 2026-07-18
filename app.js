@@ -114,6 +114,9 @@
 
   var DEFAULT_SEPARATORS = '\\s,\\t';
 
+  // ,, 由来のリテラルカンマを表す内部センチネル(文字列トークンと区別する)
+  var LITERAL_COMMA = { __literalComma: true };
+
   // 欄テキスト -> トークン配列 [{type:'spaces'|'tab'|'literal', text?}]
   function parseSeparators(fieldText) {
     if (fieldText == null) return [];
@@ -122,10 +125,18 @@
     var i = 0;
     var n = fieldText.length;
     // カンマ分割。ただし \, はエスケープされたカンマなので分割しない。
+    // また ,,(カンマ2連続)はリテラルカンマ1個として扱う(\, と同義)。
     while (i < n) {
       var c = fieldText[i];
       if (c === '\\' && i + 1 < n) {
         buf += c + fieldText[i + 1]; // エスケープ列をそのまま保持
+        i += 2;
+        continue;
+      }
+      if (c === ',' && fieldText[i + 1] === ',') {
+        raw.push(buf);               // 現在のバッファを確定
+        raw.push(LITERAL_COMMA);     // ,, はリテラルカンマトークン
+        buf = '';
         i += 2;
         continue;
       }
@@ -143,6 +154,10 @@
     var tokens = [];
     for (var k = 0; k < raw.length; k++) {
       var t = raw[k];
+      if (t === LITERAL_COMMA) {      // ,, 由来のリテラルカンマ
+        tokens.push({ type: 'literal', text: ',' });
+        continue;
+      }
       // 前後の半角空白・タブをトリム(全角スペース1文字などは残る)
       var trimmed = t.replace(/^[ \t]+|[ \t]+$/g, '');
       if (trimmed === '') continue; // 空トークンは無視
@@ -185,10 +200,13 @@
       work = expandTabs(work, tabWidth);
     }
 
-    // 1. 行頭インデント(半角空白・タブの連続)を取り出す
+    // 1. 行頭インデント(半角スペースの連続のみ)を取り出す。
+    //    行頭タブは、\t が区切りにある場合は走査部で区切りとして処理され
+    //    先頭に空セルが生じる(Excel貼付で先頭列が空のケース)。\t が区切りに
+    //    ない場合は上で空白展開済みなのでインデントとして収集される。
     var idx = 0;
     var indent = '';
-    while (idx < work.length && (work[idx] === ' ' || work[idx] === '\t')) {
+    while (idx < work.length && work[idx] === ' ') {
       indent += work[idx];
       idx++;
     }
@@ -457,6 +475,19 @@
    * オプション正規化 / format 本体
    * =======================================================*/
 
+  // 全既定値を返す純関数(テスト用・「すべて既定に戻す」用)
+  function defaultOptions() {
+    return {
+      mode: 'auto',
+      fill: 'space',
+      gap: 1,
+      tabWidth: 4,
+      alignEquals: true,
+      separators: DEFAULT_SEPARATORS,
+      lineEnding: 'auto'
+    };
+  }
+
   function normalizeOptions(options) {
     var o = options || {};
     return {
@@ -513,6 +544,7 @@
       return (mode === 'auto' || mode == null) ? detectMode(text) : mode;
     },
     resetSeparators: function () { return DEFAULT_SEPARATORS; },
+    defaultOptions: defaultOptions,
     DEFAULT_SEPARATORS: DEFAULT_SEPARATORS
   };
 
@@ -538,6 +570,8 @@
     var alignEqInput = document.getElementById('alignEquals');
     var sepInput = document.getElementById('separators');
     var sepResetBtn = document.getElementById('sep-reset');
+    var sepChips = document.querySelectorAll('[data-sep-chip]');
+    var resetAllBtn = document.getElementById('reset-all');
     var lineEndingSel = document.getElementById('lineEnding');
     var copyBtn = document.getElementById('copy');
     var modeInfo = document.getElementById('mode-info');
@@ -579,28 +613,35 @@
     }
 
     function run() {
-      var opts = readOptions();
-      var resolvedMode = TateAlign.resolveMode(input.value, opts.mode);
+      try {
+        var opts = readOptions();
+        var resolvedMode = TateAlign.resolveMode(input.value, opts.mode);
 
-      // モード追従のギャップ既定(ユーザー未変更時のみ)
-      if (!state.gapTouched && gapInput) {
-        gapInput.value = currentGapDefault(resolvedMode);
-        opts.gap = currentGapDefault(resolvedMode);
-      }
+        // モード追従のギャップ既定(ユーザー未変更時のみ)
+        if (!state.gapTouched && gapInput) {
+          gapInput.value = currentGapDefault(resolvedMode);
+          opts.gap = currentGapDefault(resolvedMode);
+        }
 
-      // =揃えチェックはコードモード時のみ活性
-      if (alignEqInput) alignEqInput.disabled = (resolvedMode !== 'code');
+        // =揃えチェックはコードモード時のみ活性
+        if (alignEqInput) alignEqInput.disabled = (resolvedMode !== 'code');
 
-      state.lastOutput = TateAlign.format(input.value, opts);
-      output.value = state.lastOutput;
+        state.lastOutput = TateAlign.format(input.value, opts);
+        output.value = state.lastOutput;
 
-      if (modeInfo) {
-        modeInfo.textContent = (opts.mode === 'auto')
-          ? '自動判定: ' + (resolvedMode === 'code' ? 'コードモード' : '表モード')
-          : (resolvedMode === 'code' ? 'コードモード' : '表モード');
-      }
-      if (leInfo) {
-        leInfo.textContent = '改行コード検出: ' + state.detectedLineEnding;
+        if (modeInfo) {
+          modeInfo.textContent = (opts.mode === 'auto')
+            ? '自動判定: ' + (resolvedMode === 'code' ? 'コードモード' : '表モード')
+            : (resolvedMode === 'code' ? 'コードモード' : '表モード');
+        }
+        if (leInfo) {
+          leInfo.textContent = '改行コード検出: ' + state.detectedLineEnding;
+        }
+      } catch (err) {
+        // 例外時はサイレントに固まらせず、モード表示欄にエラーを出す
+        if (modeInfo) {
+          modeInfo.textContent = 'エラー: ' + (err && err.message ? err.message : String(err));
+        }
       }
     }
 
@@ -630,6 +671,50 @@
 
     if (sepResetBtn) sepResetBtn.addEventListener('click', function () {
       if (sepInput) sepInput.value = TateAlign.resetSeparators();
+      run();
+    });
+
+    // 区切りチップ:欄末尾にトークンを追記(既に同トークンがあれば何もしない)
+    function hasLiteralToken(tokens, text) {
+      for (var i = 0; i < tokens.length; i++) {
+        if (tokens[i].type === 'literal' && tokens[i].text === text) return true;
+      }
+      return false;
+    }
+    function addSepChip(literalText, appendText) {
+      if (!sepInput) return;
+      var tokens = TateAlign.parseSeparators(sepInput.value);
+      if (hasLiteralToken(tokens, literalText)) return; // 既に同トークンあり
+      var v = sepInput.value.replace(/\s+$/, '');
+      // 末尾の裸カンマ(\, 以外)は取り除いて ,, の誤生成を防ぐ
+      if (v.slice(-1) === ',' && v.slice(-2) !== '\\,') {
+        v = v.slice(0, -1).replace(/\s+$/, '');
+      }
+      sepInput.value = (v === '') ? appendText : v + ',' + appendText;
+      run();
+    }
+    for (var ci = 0; ci < sepChips.length; ci++) {
+      (function (chip) {
+        chip.addEventListener('click', function () {
+          var lit = chip.getAttribute('data-sep-chip'); // 追加するリテラル文字
+          var append = (lit === ',') ? '\\,' : lit;     // カンマは \, として追記
+          addSepChip(lit, append);
+        });
+      })(sepChips[ci]);
+    }
+
+    // 「オプションをすべて既定に戻す」(入力テキストは消さない)
+    if (resetAllBtn) resetAllBtn.addEventListener('click', function () {
+      var d = TateAlign.defaultOptions();
+      if (modeSel) modeSel.value = d.mode;
+      state.fill = d.fill;
+      state.gapTouched = false; // ギャップ手動フラグ解除(run() でモード既定に追従)
+      if (gapInput) gapInput.value = d.gap;
+      if (tabWidthInput) tabWidthInput.value = d.tabWidth;
+      if (alignEqInput) alignEqInput.checked = d.alignEquals;
+      if (sepInput) sepInput.value = d.separators;
+      if (lineEndingSel) lineEndingSel.value = d.lineEnding;
+      updateFillUI();
       run();
     });
 
