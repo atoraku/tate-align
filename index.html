@@ -24,12 +24,14 @@
     <!-- オプション列 -->
     <section class="pane pane-options" aria-label="オプション">
       <div class="opt">
-        <label for="mode">モード</label>
+        <label for="mode">揃え型</label>
         <select id="mode">
           <option value="auto">自動判定</option>
-          <option value="code">コード</option>
-          <option value="table">表</option>
+          <option value="code">コメント揃え(コード)</option>
+          <option value="full">全部揃え(宣言+コメント)</option>
+          <option value="table">表揃え</option>
         </select>
+        <p id="mode-hint" class="hint"></p>
         <p id="mode-info" class="hint"></p>
       </div>
 

@@ -287,7 +287,8 @@
    * コメント分割 / 代入= 検出(引用符外)
    * =======================================================*/
 
-  // コード部 / コメント部に分割(区切りは引用符外の最初の // または #)
+  // コード部 / コメント部に分割(区切りは引用符外の最初の // または # または /*)
+  // 戻り値 isBlock: コメントが /* 始まりのブロックコメントか(後方互換: 既存呼び出しは code/comment のみ参照)
   function splitComment(line) {
     var quote = null;
     for (var i = 0; i < line.length; i++) {
@@ -301,13 +302,16 @@
         continue;
       }
       if (ch === '/' && line[i + 1] === '/') {
-        return { code: line.slice(0, i), comment: line.slice(i) };
+        return { code: line.slice(0, i), comment: line.slice(i), isBlock: false };
+      }
+      if (ch === '/' && line[i + 1] === '*') {
+        return { code: line.slice(0, i), comment: line.slice(i), isBlock: true };
       }
       if (ch === '#') {
-        return { code: line.slice(0, i), comment: line.slice(i) };
+        return { code: line.slice(0, i), comment: line.slice(i), isBlock: false };
       }
     }
-    return { code: line, comment: '' };
+    return { code: line, comment: '', isBlock: false };
   }
 
   var EQ_FORBIDDEN = '=<>!+-*/%&|^';
@@ -337,13 +341,81 @@
   }
 
   /* =========================================================
+   * N.2 ブロックコメントの閉じ揃え(コード・全部揃え共通の後処理)
+   * =======================================================*/
+
+  // parts: [{code, comment, isBlock}] を破壊的に更新する。
+  // 対象: comment が /* 始まり かつ rstrip 後 */ 終わり の行。
+  // 内文(/* と */ を除去し前後トリム)の max 幅で "/* " + pad + " */" に再構成。
+  // */ で終わらない /* 行は再構成しない(/* の桁揃えは呼び出し側の列/コメント揃えで行う)。
+  function alignBlockComments(parts) {
+    var targets = [];
+    var maxInner = 0;
+    for (var i = 0; i < parts.length; i++) {
+      var cm = parts[i].comment;
+      if (cm === '') continue;
+      var trimmed = rstrip(cm);
+      if (trimmed.length >= 4 &&
+          trimmed.slice(0, 2) === '/*' &&
+          trimmed.slice(-2) === '*/') {
+        var inner = trimmed.slice(2, trimmed.length - 2).replace(/^[ \t]+|[ \t]+$/g, '');
+        var w = displayWidth(inner);
+        if (w > maxInner) maxInner = w;
+        targets.push({ idx: i, inner: inner });
+      }
+    }
+    for (var j = 0; j < targets.length; j++) {
+      var t = targets[j];
+      parts[t.idx].comment = '/* ' + padRight(t.inner, maxInner) + ' */';
+    }
+  }
+
+  // コメント揃え(コメントを持つ行だけを対象に開始桁を揃える)。
+  // 先に alignBlockComments を適用。コード・全部揃えで共用。
+  function attachComments(parts, opts) {
+    var tw = opts.tabWidth;
+
+    alignBlockComments(parts);
+
+    var maxCode = 0;
+    for (var a = 0; a < parts.length; a++) {
+      if (parts[a].comment !== '') {
+        var w = displayWidth(rstrip(parts[a].code));
+        if (w > maxCode) maxCode = w;
+      }
+    }
+
+    var out = [];
+    for (var b = 0; b < parts.length; b++) {
+      var pt = parts[b];
+      if (pt.comment === '') {
+        out.push(rstrip(pt.code)); // コメントなし行はそのまま
+        continue;
+      }
+      var code = rstrip(pt.code);
+      var joined;
+      if (opts.fill === 'tab') {
+        var T = nextTabStop(maxCode, tw);
+        var cw = displayWidth(code);
+        var tabs = Math.ceil((T - cw) / tw);
+        if (tabs < 1) tabs = 1;
+        joined = code + '\t'.repeat(tabs) + pt.comment;
+      } else {
+        joined = padRight(code, maxCode) + ' '.repeat(opts.gap) + pt.comment;
+      }
+      out.push(rstrip(joined));
+    }
+    return out;
+  }
+
+  /* =========================================================
    * F. コードモード整形
    * =======================================================*/
 
   function formatCode(lines, opts) {
     var tw = opts.tabWidth;
 
-    // 1. タブ展開
+    // 1. タブ展開 + コメント分割
     var parts = lines.map(function (l) {
       return splitComment(expandTabs(l, tw));
     });
@@ -368,48 +440,17 @@
       }
     }
 
-    // 3. コメント揃え(コメントを持つ行のみ対象)
-    var maxCode = 0;
-    for (var a = 0; a < parts.length; a++) {
-      if (parts[a].comment !== '') {
-        var w = displayWidth(rstrip(parts[a].code));
-        if (w > maxCode) maxCode = w;
-      }
-    }
-
-    var out = [];
-    for (var b = 0; b < parts.length; b++) {
-      var pt = parts[b];
-      if (pt.comment === '') {
-        out.push(rstrip(pt.code)); // コメントなし行は揃え対象外
-        continue;
-      }
-      var code = rstrip(pt.code);
-      var joined;
-      if (opts.fill === 'tab') {
-        var T = nextTabStop(maxCode, tw);
-        var cw = displayWidth(code);
-        var tabs = Math.ceil((T - cw) / tw);
-        if (tabs < 1) tabs = 1;
-        joined = code + '\t'.repeat(tabs) + pt.comment;
-      } else {
-        joined = padRight(code, maxCode) + ' '.repeat(opts.gap) + pt.comment;
-      }
-      out.push(rstrip(joined));
-    }
-    return out;
+    // 3. コメント揃え(ブロックコメント閉じ揃え込み)
+    return attachComments(parts, opts);
   }
 
   /* =========================================================
-   * 表モード整形
+   * 列揃え(表モード・全部揃え共通)
+   * rows: [セル配列 | null(空行)] -> 揃った行文字列配列
    * =======================================================*/
 
-  function formatTable(lines, opts, seps) {
+  function alignRows(rows, opts) {
     var tw = opts.tabWidth;
-    var rows = lines.map(function (l) {
-      if (l === '') return null;           // 空行はそのまま
-      return splitLine(l, seps, tw);
-    });
 
     // 列ごとの max
     var colMax = [];
@@ -443,6 +484,48 @@
       out.push(rstrip(line));
     }
     return out;
+  }
+
+  /* =========================================================
+   * 表モード整形
+   * =======================================================*/
+
+  function formatTable(lines, opts, seps) {
+    var tw = opts.tabWidth;
+    var rows = lines.map(function (l) {
+      if (l === '') return null;           // 空行はそのまま
+      return splitLine(l, seps, tw);
+    });
+    return alignRows(rows, opts);
+  }
+
+  /* =========================================================
+   * N.3 全部揃えモード(mode:'full')
+   * コード部を表モードと同じ列揃え → コメント開始桁揃え → ブロック閉じ揃え
+   * =揃えオプションは使用しない
+   * =======================================================*/
+
+  function formatFull(lines, opts, seps) {
+    var tw = opts.tabWidth;
+
+    // 1. タブ展開 + コメント分割
+    var parts = lines.map(function (l) {
+      return splitComment(expandTabs(l, tw));
+    });
+
+    // 2. コード部を列分割(空行は null)。コメントなし行もコード部の列揃えに参加。
+    var rows = [];
+    for (var i = 0; i < parts.length; i++) {
+      if (lines[i] === '') { rows.push(null); continue; }
+      rows.push(splitLine(rstrip(parts[i].code), seps, tw));
+    }
+    var alignedCode = alignRows(rows, opts);
+    for (var k = 0; k < parts.length; k++) {
+      parts[k].code = alignedCode[k];
+    }
+
+    // 3. コメント開始桁揃え(ブロックコメント閉じ揃え込み)
+    return attachComments(parts, opts);
   }
 
   /* =========================================================
@@ -513,6 +596,8 @@
     var outLines;
     if (mode === 'code') {
       outLines = formatCode(lines, opts);
+    } else if (mode === 'full') {
+      outLines = formatFull(lines, opts, parseSeparators(opts.separators));
     } else {
       var seps = parseSeparators(opts.separators);
       outLines = formatTable(lines, opts, seps);
@@ -575,6 +660,7 @@
     var lineEndingSel = document.getElementById('lineEnding');
     var copyBtn = document.getElementById('copy');
     var modeInfo = document.getElementById('mode-info');
+    var modeHint = document.getElementById('mode-hint');
     var leInfo = document.getElementById('le-info');
     var tabNote = document.getElementById('tab-note');
     var gapField = document.getElementById('gap-field');
@@ -587,7 +673,7 @@
     };
 
     function currentGapDefault(mode) {
-      return mode === 'code' ? 1 : 2;
+      return (mode === 'code' || mode === 'full') ? 1 : 2;
     }
 
     function readOptions() {
@@ -629,10 +715,18 @@
         state.lastOutput = TateAlign.format(input.value, opts);
         output.value = state.lastOutput;
 
+        if (modeHint) {
+          var MODE_HINTS = {
+            code: '行末コメント(// # /*)の桁を揃えます',
+            full: '単語列・=・コメント・*/ までまとめて揃えます',
+            table: '区切り欄に従って列を揃えます'
+          };
+          modeHint.textContent = (opts.mode === 'auto') ? '' : (MODE_HINTS[opts.mode] || '');
+        }
         if (modeInfo) {
           modeInfo.textContent = (opts.mode === 'auto')
             ? '自動判定: ' + (resolvedMode === 'code' ? 'コードモード' : '表モード')
-            : (resolvedMode === 'code' ? 'コードモード' : '表モード');
+            : '';
         }
         if (leInfo) {
           leInfo.textContent = '改行コード検出: ' + state.detectedLineEnding;

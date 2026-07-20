@@ -321,6 +321,75 @@
     assertEqual(d.lineEnding, 'auto');
   });
 
+  /* ========== ⑤ v1.2 追加分(揃え型プリセット + ブロックコメント) ========== */
+
+  var BLOCK_INPUT = 'int a = 0; /* 速度 */\nint speed = 10; /* 加速度の設定 */\nlong t = 3; /* 時間 */';
+
+  // 例H:全部揃え(単語列・=・/*・*/ が全て同一桁)
+  test('⑤ 例H 全部揃え(ブロックコメント)', function () {
+    var expected =
+      'int  a     = 0;  /* 速度         */\n' +
+      'int  speed = 10; /* 加速度の設定 */\n' +
+      'long t     = 3;  /* 時間         */';
+    assertEqual(T.format(BLOCK_INPUT, { mode: 'full', fill: 'space', gap: 1, separators: '\\s,\\t' }), expected);
+  });
+
+  // 例I:コードモード + ブロックコメント(コード部は変更せず /* と */ だけ揃う)
+  test('⑤ 例I コード+ブロックコメント', function () {
+    var expected =
+      'int a = 0;      /* 速度         */\n' +
+      'int speed = 10; /* 加速度の設定 */\n' +
+      'long t = 3;     /* 時間         */';
+    assertEqual(T.format(BLOCK_INPUT, { mode: 'code', fill: 'space', gap: 1, alignEquals: false }), expected);
+  });
+
+  // 全部揃え + // コメント(例A入力 → コード部が例G相当 + // 揃え)
+  test('⑤ 全部揃え + // コメント', function () {
+    var input = 'int a = 0; // 速度\nint speed = 10; // 加速度の設定\nlong t = 3; // 時間';
+    var expected =
+      'int  a     = 0;  // 速度\n' +
+      'int  speed = 10; // 加速度の設定\n' +
+      'long t     = 3;  // 時間';
+    assertEqual(T.format(input, { mode: 'full', fill: 'space', gap: 1, separators: '\\s,\\t' }), expected);
+  });
+
+  // 引用符内の /* をコメント扱いしない
+  test('⑤ 引用符内の /* はコメントにしない', function () {
+    var p = T.splitComment('x = "/* not */" // real');
+    assertEqual(p.code, 'x = "/* not */" ');
+    assertEqual(p.comment, '// real');
+    assertEqual(p.isBlock, false);
+  });
+
+  // */ で終わらない /* 行は /* の桁揃えのみ(内文パディングなし)
+  test('⑤ */ で終わらない行は内文パディングなし', function () {
+    var input = 'a = 1; /* x */\nbb = 22; /* あ';
+    var expected = 'a = 1;   /* x */\nbb = 22; /* あ';
+    assertEqual(T.format(input, { mode: 'code', fill: 'space', gap: 1, alignEquals: false }), expected);
+  });
+
+  // detectMode: /* コメントが過半なら code
+  test('⑤ detectMode: /* 過半で code', function () {
+    assertEqual(T.detectMode('a /* x */\nb /* y */\nc'), 'code');
+  });
+
+  // 全部揃え:コメントなし行もコード部の列揃えに参加する
+  test('⑤ 全部揃え: コメントなし行も列揃えに参加', function () {
+    var input = 'int a = 0;\nint speed = 10; // x';
+    var expected = 'int a     = 0;\nint speed = 10; // x';
+    assertEqual(T.format(input, { mode: 'full', fill: 'space', gap: 1, separators: '\\s,\\t' }), expected);
+  });
+
+  // 全部揃え:=揃えオプションは無視(true/false で同結果、かつ例G相当)
+  test('⑤ 全部揃え: =揃えオプションは無視', function () {
+    var input = 'int a = 0;\nint speed = 10;\nlong t = 3;';
+    var expected = 'int  a     = 0;\nint  speed = 10;\nlong t     = 3;';
+    var withEq = T.format(input, { mode: 'full', fill: 'space', gap: 1, alignEquals: true, separators: '\\s,\\t' });
+    var noEq = T.format(input, { mode: 'full', fill: 'space', gap: 1, alignEquals: false, separators: '\\s,\\t' });
+    assertEqual(withEq, expected);
+    assertEqual(noEq, expected);
+  });
+
   /* ========== レンダリング ========== */
 
   var passed = results.filter(function (r) { return r.ok; }).length;
