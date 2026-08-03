@@ -178,7 +178,9 @@
    * E. 行分割(splitLine)— 表モード
    * =======================================================*/
 
-  function splitLine(line, seps, tabWidth) {
+  // leadingTabIsIndent(v1.3・省略可):true のとき行頭のタブ列を「共通インデント」
+  // とみなしてタブ幅で空白展開し保持する。省略時は従来動作(行頭タブは区切り扱い)。
+  function splitLine(line, seps, tabWidth, leadingTabIsIndent) {
     if (tabWidth == null) tabWidth = 4;
     seps = seps || [];
 
@@ -200,15 +202,23 @@
       work = expandTabs(work, tabWidth);
     }
 
-    // 1. 行頭インデント(半角スペースの連続のみ)を取り出す。
-    //    行頭タブは、\t が区切りにある場合は走査部で区切りとして処理され
-    //    先頭に空セルが生じる(Excel貼付で先頭列が空のケース)。\t が区切りに
-    //    ない場合は上で空白展開済みなのでインデントとして収集される。
+    // 1. 行頭インデントを取り出す。
+    //    既定(leadingTabIsIndent なし)は半角スペースの連続のみ。行頭タブは
+    //    \t が区切りにある場合は走査部で区切りとして処理され先頭に空セルが生じる
+    //    (Excel貼付で先頭列が空のケース)。\t が区切りにない場合は上で空白展開済み
+    //    なのでインデントとして収集される。
+    //    leadingTabIsIndent = true(v1.3:非空行がすべて行頭タブ=ソースの共通
+    //    インデント)のときは、行頭の空白・タブ列を展開してインデントとして保持する。
     var idx = 0;
     var indent = '';
-    while (idx < work.length && work[idx] === ' ') {
-      indent += work[idx];
-      idx++;
+    if (leadingTabIsIndent) {
+      while (idx < work.length && (work[idx] === ' ' || work[idx] === '\t')) idx++;
+      indent = expandTabs(work.slice(0, idx), tabWidth);
+    } else {
+      while (idx < work.length && work[idx] === ' ') {
+        indent += work[idx];
+        idx++;
+      }
     }
     var rest = work.slice(idx);
 
@@ -490,11 +500,11 @@
    * 表モード整形
    * =======================================================*/
 
-  function formatTable(lines, opts, seps) {
+  function formatTable(lines, opts, seps, leadingTabIsIndent) {
     var tw = opts.tabWidth;
     var rows = lines.map(function (l) {
       if (l === '') return null;           // 空行はそのまま
-      return splitLine(l, seps, tw);
+      return splitLine(l, seps, tw, leadingTabIsIndent);
     });
     return alignRows(rows, opts);
   }
@@ -505,7 +515,7 @@
    * =揃えオプションは使用しない
    * =======================================================*/
 
-  function formatFull(lines, opts, seps) {
+  function formatFull(lines, opts, seps, leadingTabIsIndent) {
     var tw = opts.tabWidth;
 
     // 1. タブ展開 + コメント分割
@@ -517,7 +527,7 @@
     var rows = [];
     for (var i = 0; i < parts.length; i++) {
       if (lines[i] === '') { rows.push(null); continue; }
-      rows.push(splitLine(rstrip(parts[i].code), seps, tw));
+      rows.push(splitLine(rstrip(parts[i].code), seps, tw, leadingTabIsIndent));
     }
     var alignedCode = alignRows(rows, opts);
     for (var k = 0; k < parts.length; k++) {
@@ -529,8 +539,156 @@
   }
 
   /* =========================================================
+   * O.2 関数・括弧揃えモード(mode:'paren')— SPEC §5.7
+   * ( ) ; をアンカーにしてコード部を揃える(コード部の連結はギャップ0)
+   * 区切り欄・=揃えオプションは使用しない
+   * =======================================================*/
+
+  // コード部の引用符外を走査してアンカー候補を集める。
+  // opens: '(' の位置(前から)/ closes: ')' の位置(全件・昇順)/ semi: 最後の ';' の位置(無ければ -1)
+  function findAnchors(code) {
+    var opens = [];
+    var closes = [];
+    var semi = -1;
+    var quote = null;
+    for (var i = 0; i < code.length; i++) {
+      var ch = code[i];
+      if (quote) {
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (isQuoteChar(ch)) {
+        quote = ch;
+        continue;
+      }
+      if (ch === '(') opens.push(i);
+      else if (ch === ')') closes.push(i);
+      else if (ch === ';') semi = i;
+    }
+    return { opens: opens, closes: closes, semi: semi };
+  }
+
+  function formatParen(lines, opts) {
+    var tw = opts.tabWidth;
+    var i, t;
+
+    // 1. タブ展開 + コメント分割
+    var parts = lines.map(function (l) {
+      return splitComment(expandTabs(l, tw));
+    });
+
+    // 2. アンカー判定の対象行(コード部が空でない行)を集める
+    var codes = [];
+    var targets = [];
+    for (i = 0; i < parts.length; i++) {
+      codes[i] = rstrip(parts[i].code);
+      if (lines[i] === '' || codes[i] === '') continue;
+      targets.push(i);
+    }
+
+    // 3. 採用アンカーの決定(open は前から・close は後ろから、全対象行にある限り)
+    var anchors = {};
+    var nOpen = Infinity, nClose = Infinity;
+    var hasSemi = targets.length > 0;
+    for (t = 0; t < targets.length; t++) {
+      var a = findAnchors(codes[targets[t]]);
+      anchors[targets[t]] = a;
+      if (a.opens.length < nOpen) nOpen = a.opens.length;
+      if (a.closes.length < nClose) nClose = a.closes.length;
+      if (a.semi < 0) hasSemi = false;
+    }
+    if (!isFinite(nOpen)) nOpen = 0;
+    if (!isFinite(nClose)) nClose = 0;
+
+    // 4. 行ごとの採用位置(昇順ソート+重複除去)
+    var positions = {};
+    var countTally = {};
+    for (t = 0; t < targets.length; t++) {
+      var idx = targets[t];
+      var an = anchors[idx];
+      var pos = [];
+      for (var k = 0; k < nOpen; k++) pos.push(an.opens[k]);
+      for (var m = an.closes.length - nClose; m < an.closes.length; m++) pos.push(an.closes[m]);
+      if (hasSemi) pos.push(an.semi);
+      pos.sort(function (x, y) { return x - y; });
+      var uniq = [];
+      for (var q = 0; q < pos.length; q++) {
+        if (q === 0 || pos[q] !== pos[q - 1]) uniq.push(pos[q]);
+      }
+      positions[idx] = uniq;
+      countTally[uniq.length] = (countTally[uniq.length] || 0) + 1;
+    }
+
+    // 5. アンカー個数が最も多くの行で一致する値を基準に。外れた行は揃え対象外。
+    var ref = -1, best = -1;
+    for (var key in countTally) {
+      if (!Object.prototype.hasOwnProperty.call(countTally, key)) continue;
+      var kn = parseInt(key, 10);
+      var cnt = countTally[key];
+      if (cnt > best || (cnt === best && kn < ref)) { best = cnt; ref = kn; }
+    }
+
+    // 6. アンカー直前で分割(アンカー文字は右セルの先頭)
+    var rows = [];
+    var rawLine = {};
+    for (i = 0; i < parts.length; i++) {
+      var p = positions[i];
+      if (!p || p.length !== ref) {
+        rows.push(null);      // 列揃えに参加させない(colMax を汚さない)
+        rawLine[i] = true;
+        continue;
+      }
+      var cells = [];
+      var prev = 0;
+      for (var z = 0; z < p.length; z++) {
+        cells.push(codes[i].slice(prev, p[z]));
+        prev = p[z];
+      }
+      cells.push(codes[i].slice(prev));
+      rows.push(cells);
+    }
+
+    // 7. コード部の連結はギャップ0・スペース埋め固定(タブでは括弧の桁を合わせられない)
+    var codeOpts = {};
+    for (var ok in opts) {
+      if (Object.prototype.hasOwnProperty.call(opts, ok)) codeOpts[ok] = opts[ok];
+    }
+    codeOpts.gap = 0;
+    codeOpts.fill = 'space';
+    var aligned = alignRows(rows, codeOpts);
+
+    for (i = 0; i < parts.length; i++) {
+      parts[i].code = rawLine[i] ? codes[i] : aligned[i];
+    }
+
+    // 8. コメント開始桁揃え(+ブロックコメント閉じ揃え)。ここはギャップ・埋め方式が有効。
+    return attachComments(parts, opts);
+  }
+
+  /* =========================================================
    * 自動判定 / 改行コード検出
    * =======================================================*/
+
+  // v1.3: 行頭タブを「共通インデント」として保持するか、「空の先頭セル」として
+  // 扱うかを入力全体から判定する。
+  //   1) 非空行がすべて行頭タブ  → ソースコードの共通インデント(true)
+  //   2) 非空行がすべてタブを含む → タブ区切りの表(Excel 貼り付け)とみなす(false)
+  //   3) タブを含まない行がある   → 表ではないのでインデント扱い(true)
+  //      例: 構造体を波括弧の行ごとコピーした場合(`typedef struct {` にはタブがない)
+  function leadingTabIsIndent(lines) {
+    var nonEmpty = 0;
+    var allStartWithTab = true;
+    var allContainTab = true;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === '') continue;
+      nonEmpty++;
+      if (lines[i][0] !== '\t') allStartWithTab = false;
+      if (lines[i].indexOf('\t') < 0) allContainTab = false;
+    }
+    if (nonEmpty === 0) return false;
+    if (allStartWithTab) return true;
+    return !allContainTab;
+  }
 
   function detectMode(text) {
     var lines = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
@@ -593,14 +751,19 @@
     var mode = opts.mode;
     if (mode === 'auto') mode = detectMode(normalized);
 
+    // v1.3: 行頭タブを共通インデントとして保持するか、Excel の空セルとして扱うか
+    var tabIsIndent = leadingTabIsIndent(lines);
+
     var outLines;
     if (mode === 'code') {
       outLines = formatCode(lines, opts);
     } else if (mode === 'full') {
-      outLines = formatFull(lines, opts, parseSeparators(opts.separators));
+      outLines = formatFull(lines, opts, parseSeparators(opts.separators), tabIsIndent);
+    } else if (mode === 'paren') {
+      outLines = formatParen(lines, opts);
     } else {
       var seps = parseSeparators(opts.separators);
-      outLines = formatTable(lines, opts, seps);
+      outLines = formatTable(lines, opts, seps, tabIsIndent);
     }
 
     var joined = outLines.join('\n');
@@ -622,6 +785,7 @@
     splitLine: splitLine,
     splitComment: splitComment,
     findAssignEq: findAssignEq,
+    findAnchors: findAnchors,
     detectMode: detectMode,
     detectLineEnding: detectLineEnding,
     format: format,
@@ -654,6 +818,7 @@
     var tabWidthInput = document.getElementById('tabWidth');
     var alignEqInput = document.getElementById('alignEquals');
     var sepInput = document.getElementById('separators');
+    var sepField = document.getElementById('sep-field');
     var sepResetBtn = document.getElementById('sep-reset');
     var sepChips = document.querySelectorAll('[data-sep-chip]');
     var resetAllBtn = document.getElementById('reset-all');
@@ -673,7 +838,7 @@
     };
 
     function currentGapDefault(mode) {
-      return (mode === 'code' || mode === 'full') ? 1 : 2;
+      return (mode === 'code' || mode === 'full' || mode === 'paren') ? 1 : 2;
     }
 
     function readOptions() {
@@ -712,6 +877,13 @@
         // =揃えチェックはコードモード時のみ活性
         if (alignEqInput) alignEqInput.disabled = (resolvedMode !== 'code');
 
+        // 関数・括弧揃えは区切り欄を使わないので無効化(ギャップはコメント間隔として有効)
+        var sepDisabled = (resolvedMode === 'paren');
+        if (sepInput) sepInput.disabled = sepDisabled;
+        if (sepResetBtn) sepResetBtn.disabled = sepDisabled;
+        for (var si = 0; si < sepChips.length; si++) sepChips[si].disabled = sepDisabled;
+        if (sepField) sepField.classList.toggle('disabled', sepDisabled);
+
         state.lastOutput = TateAlign.format(input.value, opts);
         output.value = state.lastOutput;
 
@@ -719,6 +891,7 @@
           var MODE_HINTS = {
             code: '行末コメント(// # /*)の桁を揃えます',
             full: '単語列・=・コメント・*/ までまとめて揃えます',
+            paren: '( ) ; とコメントの桁を揃えます(関数呼び出し向け)',
             table: '区切り欄に従って列を揃えます'
           };
           modeHint.textContent = (opts.mode === 'auto') ? '' : (MODE_HINTS[opts.mode] || '');

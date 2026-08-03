@@ -29,6 +29,7 @@
           <option value="auto">自動判定</option>
           <option value="code">コメント揃え(コード)</option>
           <option value="full">全部揃え(宣言+コメント)</option>
+          <option value="paren">関数・括弧揃え</option>
           <option value="table">表揃え</option>
         </select>
         <p id="mode-hint" class="hint"></p>
@@ -61,7 +62,7 @@
         <label for="alignEquals">=揃え(コードモード)</label>
       </div>
 
-      <div class="opt">
+      <div class="opt" id="sep-field">
         <label for="separators">区切り欄</label>
         <div class="sep-row">
           <input id="separators" class="mono" type="text" value="\s,\t"

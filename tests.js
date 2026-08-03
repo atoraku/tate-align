@@ -390,6 +390,129 @@
     assertEqual(noEq, expected);
   });
 
+  /* ========== ⑥ v1.3 追加分(行頭タブのインデント判定 + 関数・括弧揃え) ========== */
+
+  // 例J:関数・括弧揃え(( ) ; が全行同一桁。コード部の連結はギャップ0)
+  test('⑥ 例J 関数・括弧揃え', function () {
+    var input = 'strncpy(dest, src, n);\nmemcpy(dest, src, len);\nstrcat(a, b);';
+    var expected =
+      'strncpy(dest, src, n  );\n' +
+      'memcpy (dest, src, len);\n' +
+      'strcat (a, b          );';
+    assertEqual(T.format(input, { mode: 'paren', fill: 'space', gap: 1 }), expected);
+  });
+
+  // 例K:関数・括弧揃え + ブロックコメント
+  test('⑥ 例K 関数・括弧揃え+ブロックコメント', function () {
+    var input = 'strncpy(dest, src, n); /* 可変長 */\nmemcpy(dest, src, len); /* 固定長 */';
+    var expected =
+      'strncpy(dest, src, n  ); /* 可変長 */\n' +
+      'memcpy (dest, src, len); /* 固定長 */';
+    assertEqual(T.format(input, { mode: 'paren', fill: 'space', gap: 1 }), expected);
+  });
+
+  // 例L:タブインデントの構造体メンバー(全行が行頭タブ → 共通インデントとして保持)
+  test('⑥ 例L タブインデントの構造体(表揃え)', function () {
+    var input = '\tchar name[20];\n\tint age;\n\tdouble gpa;';
+    var expected = '    char   name[20];\n    int    age;\n    double gpa;';
+    assertEqual(T.format(input, { mode: 'table', fill: 'space', gap: 1, tabWidth: 4, separators: '\\s,\\t' }), expected);
+  });
+
+  // 全行が行頭タブ → 全部揃えでも共通インデント保持
+  test('⑥ 全行が行頭タブ: 全部揃えでもインデント保持', function () {
+    var input = '\tchar name[20]; // 氏名\n\tint age; // 年齢';
+    var expected = '    char name[20]; // 氏名\n    int  age;      // 年齢';
+    assertEqual(T.format(input, { mode: 'full', fill: 'space', gap: 1, tabWidth: 4, separators: '\\s,\\t' }), expected);
+  });
+
+  // 一部の行だけ行頭タブ → 従来どおり空セル(v1.1 の Excel ケースが回帰しないこと)
+  test('⑥ 一部行だけ行頭タブ: 空セル扱いのまま(v1.1回帰なし)', function () {
+    var input = '名前\t点数\n\t90\tよい\nAlexander\t100\ttops';
+    var expected =
+      '名前       点数\n' +
+      '           90    よい\n' +
+      'Alexander  100   tops';
+    assertEqual(T.format(input, { mode: 'table', fill: 'space', gap: 2, separators: '\\s,\\t' }), expected);
+  });
+
+  // タブを含まない行がある(構造体を波括弧の行ごとコピー)→ 行頭タブはインデント扱い。
+  // タブインデント版とスペースインデント版で結果が一致すること。
+  test('⑥ 波括弧を含む構造体: タブ/スペースのインデントで同じ結果', function () {
+    var tabbed = 'typedef struct {\n\tchar name[20];\n\tint age;\n\tdouble gpa;\n} Student;';
+    var spaced = 'typedef struct {\n    char name[20];\n    int age;\n    double gpa;\n} Student;';
+    var opts = { mode: 'table', fill: 'space', gap: 1, tabWidth: 4, separators: '\\s,\\t' };
+    var expected =
+      'typedef    struct    {\n' +
+      '    char   name[20];\n' +
+      '    int    age;\n' +
+      '    double gpa;\n' +
+      '}          Student;';
+    assertEqual(T.format(tabbed, opts), expected);
+    assertEqual(T.format(spaced, opts), expected);
+  });
+
+  // 2番目の ( が一部行にしかない場合、そこは揃えない(open_1 までで打ち切り)
+  test('⑥ open_2 が一部行にしかない場合は open_1 までで打ち切り', function () {
+    var input = 'foo(bar(x));\nbaz(y);';
+    var expected = 'foo(bar(x));\nbaz(y     );';
+    assertEqual(T.format(input, { mode: 'paren', fill: 'space', gap: 1 }), expected);
+  });
+
+  // close_k は末尾から数えて全行にある限り採用(混在でも ( ) ; が揃う)
+  test('⑥ close_1 + semi で ) と ; が揃う', function () {
+    var out = T.format('foo(bar(x));\nbaz(y);', { mode: 'paren', fill: 'space', gap: 1 });
+    var lines = out.split('\n');
+    assertEqual(lines[0].indexOf('('), lines[1].indexOf('('));
+    assertEqual(lines[0].lastIndexOf(')'), lines[1].lastIndexOf(')'));
+    assertEqual(lines[0].indexOf(';'), lines[1].indexOf(';'));
+  });
+
+  // 引用符内の ( ) ; はアンカーにしない
+  test('⑥ 引用符内の ( ) ; をアンカーにしない', function () {
+    var input = 'printf("(a);");\nputs("(b);");';
+    var expected = 'printf("(a);");\nputs  ("(b);");';
+    assertEqual(T.format(input, { mode: 'paren', fill: 'space', gap: 1 }), expected);
+  });
+
+  // findAnchors: 引用符外のみを拾う
+  test('⑥ findAnchors: 引用符外のみ', function () {
+    var a = T.findAnchors('printf("(a);");');
+    assertEqual(a.opens.length, 1);
+    assertEqual(a.opens[0], 6);
+    assertEqual(a.closes.length, 1);
+    assertEqual(a.closes[0], 13);
+    assertEqual(a.semi, 14);
+  });
+
+  // アンカーを持たない行(コメントのみ)は原文のまま(列揃えに参加しない)
+  test('⑥ コメントのみの行は揃え対象外(コード部は原文のまま)', function () {
+    var input = 'strncpy(dest, src, n);\n// メモ\nmemcpy(dest, src, len);';
+    var lines = T.format(input, { mode: 'paren', fill: 'space', gap: 1 }).split('\n');
+    assertEqual(lines[0].slice(0, 24), 'strncpy(dest, src, n  );');
+    assertEqual(lines[2].slice(0, 24), 'memcpy (dest, src, len);');
+  });
+
+  // paren では区切り欄・=揃えの指定を無視する
+  test('⑥ paren は区切り欄・=揃えの指定を無視', function () {
+    var input = 'strncpy(dest, src, n);\nmemcpy(dest, src, len);\nstrcat(a, b);';
+    var expected =
+      'strncpy(dest, src, n  );\n' +
+      'memcpy (dest, src, len);\n' +
+      'strcat (a, b          );';
+    assertEqual(T.format(input, { mode: 'paren', fill: 'space', gap: 1, separators: '\\s,\\t,;', alignEquals: true }), expected);
+  });
+
+  // splitLine 第4引数:省略時は従来動作、true で行頭タブをインデント展開
+  test('⑥ splitLine 第4引数: 省略時は従来動作 / true でインデント', function () {
+    var seps = T.parseSeparators('\\s,\\t');
+    var oldWay = T.splitLine('\t90', seps, 4);
+    assertEqual(oldWay.length, 2);
+    assertEqual(oldWay[0], '');
+    var newWay = T.splitLine('\t90', seps, 4, true);
+    assertEqual(newWay.length, 1);
+    assertEqual(newWay[0], '    90');
+  });
+
   /* ========== レンダリング ========== */
 
   var passed = results.filter(function (r) { return r.ok; }).length;
