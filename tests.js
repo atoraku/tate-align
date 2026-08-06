@@ -513,6 +513,66 @@
     assertEqual(newWay[0], '    90');
   });
 
+  /* ========== ⑦ v1.3.1 追加分(タブ埋め時のコメント桁ずれ修正) ========== */
+
+  // タブは「次のタブ位置まで進む」ので幅が可変。displayWidth(タブ=幅1)では測れない。
+  test('⑦ displayWidthTabs: タブを次のタブ位置まで進めて測る', function () {
+    assertEqual(T.displayWidthTabs('abc\tx', 4), 5);   // 3 -> 4 -> 5
+    assertEqual(T.displayWidthTabs('abcd\tx', 4), 9);  // 4 -> 8 -> 9
+    assertEqual(T.displayWidthTabs('a\t\tb', 4), 9);   // 1 -> 4 -> 8 -> 9
+    assertEqual(T.displayWidthTabs('あ\tb', 4), 5);    // 2 -> 4 -> 5
+    assertEqual(T.displayWidthTabs('abc', 4), 3);      // タブなしは displayWidth と同じ
+  });
+
+  // タブ幅で展開したときのコメント開始桁(検証用ヘルパ)
+  function commentColumns(out, tw) {
+    var cols = [];
+    out.split('\n').forEach(function (l) {
+      var e = expandTabs(l, tw);
+      var i = e.search(/\/\*|\/\/|#/);
+      if (i >= 0) cols.push(T.displayWidth(e.slice(0, i)));
+    });
+    return cols;
+  }
+  function assertAllSame(cols) {
+    for (var i = 1; i < cols.length; i++) assertEqual(cols[i], cols[0]);
+    if (cols.length === 0) throw new Error('コメント行が見つからない');
+  }
+
+  var TAB_FN_BLOCK =
+    'strncpy(dest, src, n); /* 可変長 */\n' +
+    'memcpy(dest, src, len); /* 固定長 */\n' +
+    'strcat(a, b); /* 連結 */';
+
+  // 報告のバグ:全部揃え+タブ埋めでコメントだけずれていた(列揃えで入ったタブを
+  // 幅1と数えていたため)。展開後のコメント開始桁が全行一致すること。
+  test('⑦ 全部揃え+タブ埋め: コメント開始桁が揃う', function () {
+    var out = T.format(TAB_FN_BLOCK, {
+      mode: 'full', fill: 'tab', gap: 1, tabWidth: 4, separators: '\\s,\\t,\\,'
+    });
+    assertAllSame(commentColumns(out, 4));
+  });
+
+  test('⑦ 全部揃え+タブ埋め: タブ幅8でも揃う', function () {
+    var out = T.format(TAB_FN_BLOCK, {
+      mode: 'full', fill: 'tab', gap: 1, tabWidth: 8, separators: '\\s,\\t,\\,'
+    });
+    assertAllSame(commentColumns(out, 8));
+  });
+
+  test('⑦ 関数・括弧揃え+タブ埋め: コメント開始桁が揃う', function () {
+    var out = T.format(TAB_FN_BLOCK, { mode: 'paren', fill: 'tab', gap: 1, tabWidth: 4 });
+    assertAllSame(commentColumns(out, 4));
+  });
+
+  // 出力をもう一度貼り直しても揃ったまま(冪等)
+  test('⑦ タブ埋めの出力を再入力しても揃ったまま', function () {
+    var opts = { mode: 'full', fill: 'tab', gap: 1, tabWidth: 4, separators: '\\s,\\t,\\,' };
+    var once = T.format(TAB_FN_BLOCK, opts);
+    var twice = T.format(once, opts);
+    assertAllSame(commentColumns(twice, 4));
+  });
+
   /* ========== レンダリング ========== */
 
   var passed = results.filter(function (r) { return r.ok; }).length;

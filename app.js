@@ -83,6 +83,19 @@
     return Math.floor(max / tabWidth) * tabWidth + tabWidth;
   }
 
+  // v1.3.1: タブを含む文字列の表示幅。タブは「次のタブ位置まで進む」ため幅が可変で、
+  // displayWidth(タブ=幅1)では正しく測れない。列揃えでタブを挿入した後の
+  // コード部を測る場面で使う。
+  function displayWidthTabs(str, tabWidth) {
+    if (str.indexOf('\t') < 0) return displayWidth(str); // 高速パス
+    var col = 0;
+    for (var ch of str) {
+      if (ch === '\t') col += tabWidth - (col % tabWidth);
+      else col += charWidth(ch.codePointAt(0));
+    }
+    return col;
+  }
+
   // タブをタブ幅で空白展開(表示幅ベースのタブストップ)
   function expandTabs(str, tabWidth) {
     var out = '';
@@ -387,10 +400,11 @@
 
     alignBlockComments(parts);
 
+    // コード部は列揃えでタブが挿入されている場合があるので、タブ込みの表示幅で測る
     var maxCode = 0;
     for (var a = 0; a < parts.length; a++) {
       if (parts[a].comment !== '') {
-        var w = displayWidth(rstrip(parts[a].code));
+        var w = displayWidthTabs(rstrip(parts[a].code), tw);
         if (w > maxCode) maxCode = w;
       }
     }
@@ -403,15 +417,17 @@
         continue;
       }
       var code = rstrip(pt.code);
+      var cw = displayWidthTabs(code, tw);
       var joined;
       if (opts.fill === 'tab') {
         var T = nextTabStop(maxCode, tw);
-        var cw = displayWidth(code);
-        var tabs = Math.ceil((T - cw) / tw);
+        // 現在位置 cw から T(タブ幅の倍数)へ進むのに必要なタブ本数
+        var tabs = (T - Math.floor(cw / tw) * tw) / tw;
         if (tabs < 1) tabs = 1;
         joined = code + '\t'.repeat(tabs) + pt.comment;
       } else {
-        joined = padRight(code, maxCode) + ' '.repeat(opts.gap) + pt.comment;
+        var padWidth = maxCode > cw ? maxCode - cw : 0;
+        joined = code + ' '.repeat(padWidth) + ' '.repeat(opts.gap) + pt.comment;
       }
       out.push(rstrip(joined));
     }
@@ -781,6 +797,7 @@
   var TateAlign = {
     charWidth: charWidth,
     displayWidth: displayWidth,
+    displayWidthTabs: displayWidthTabs,
     parseSeparators: parseSeparators,
     splitLine: splitLine,
     splitComment: splitComment,
