@@ -573,6 +573,83 @@
     assertAllSame(commentColumns(twice, 4));
   });
 
+  /* ========== ⑧ v1.4 追加分(行頭インデントの正規化) ========== */
+
+  var IDT_SEP = '\\s,\\t';
+
+  test('⑧ majorityIndentWidth: 多数派の幅を返す', function () {
+    assertEqual(T.majorityIndentWidth(['    a', '    b', '    c', 'd', 'e'], 4), 4);
+    assertEqual(T.majorityIndentWidth(['a', 'b', 'c', '    d'], 4), 0);
+    // 同数のときは小さいほう(余計に字下げしない)
+    assertEqual(T.majorityIndentWidth(['    a', 'b'], 4), 0);
+    // タブは展開して測る
+    assertEqual(T.majorityIndentWidth(['\ta', '\tb', 'c'], 4), 4);
+  });
+
+  test('⑧ normalizeIndentLines: 非空行だけ揃え、空行は保持', function () {
+    // 4 が 2 行、0 が 1 行 → 多数派は 4
+    var out = T.normalizeIndentLines(['    a', '', '    b', 'c'], 4);
+    assertEqual(out.length, 4);
+    assertEqual(out[0], '    a');
+    assertEqual(out[1], '');   // 空行はそのまま
+    assertEqual(out[2], '    b');
+    assertEqual(out[3], '    c');
+  });
+
+  // 報告のケース:5行が空白4つ、2行が行頭から → 多数派の4に揃う
+  test('⑧ format: インデント混在を多数派に揃える', function () {
+    var input =
+      '    int    speed;\n' +
+      '    char   name[20];\n' +
+      '    double gpa;\n' +
+      '    long   t;\n' +
+      '    short  s;\n' +
+      'int flag;\n' +
+      'char buf[8];';
+    var expected =
+      '    int    speed;\n' +
+      '    char   name[20];\n' +
+      '    double gpa;\n' +
+      '    long   t;\n' +
+      '    short  s;\n' +
+      '    int    flag;\n' +
+      '    char   buf[8];';
+    assertEqual(T.format(input, { mode: 'table', fill: 'space', gap: 1, separators: IDT_SEP, normalizeIndent: true }), expected);
+  });
+
+  // 既定オフのときは従来どおり(回帰防止)
+  test('⑧ 既定オフでは従来動作のまま', function () {
+    var input = '    int a;\nint bb;';
+    var withOff = T.format(input, { mode: 'table', fill: 'space', gap: 1, separators: IDT_SEP });
+    var withUndefined = T.format(input, { mode: 'table', fill: 'space', gap: 1, separators: IDT_SEP, normalizeIndent: false });
+    assertEqual(withOff, withUndefined);
+    // 1行目のインデントが保たれている(揃えられていない)
+    assertEqual(withOff.split('\n')[0].slice(0, 4), '    ');
+    assertEqual(withOff.split('\n')[1].slice(0, 1), 'i');
+  });
+
+  // タブインデントと空白インデントが混ざっていても揃う
+  test('⑧ タブと空白の混在インデントを揃える', function () {
+    var input = '\tint a;\n    int bb;\nint ccc;\n\tint d;';
+    var out = T.format(input, { mode: 'table', fill: 'space', gap: 1, tabWidth: 4, separators: IDT_SEP, normalizeIndent: true });
+    out.split('\n').forEach(function (l) {
+      assertEqual(l.slice(0, 4), '    ');
+    });
+  });
+
+  // コメント揃え型でも前処理として効く
+  test('⑧ コメント揃えでもインデント正規化が効く', function () {
+    var input = '    int a = 0; // 速度\nint speed = 10; // 加速\n    long t = 3; // 時間';
+    var out = T.format(input, { mode: 'code', fill: 'space', gap: 1, alignEquals: false, normalizeIndent: true });
+    out.split('\n').forEach(function (l) {
+      assertEqual(l.slice(0, 4), '    ');
+    });
+  });
+
+  test('⑧ defaultOptions に normalizeIndent: false が含まれる', function () {
+    assertEqual(T.defaultOptions().normalizeIndent, false);
+  });
+
   /* ========== レンダリング ========== */
 
   var passed = results.filter(function (r) { return r.ok; }).length;

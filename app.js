@@ -114,6 +114,50 @@
   }
 
   /* =========================================================
+   * v1.4: 行頭インデントの正規化(オプション・既定オフ)
+   * 行頭の空白幅がバラバラな入力を、いちばん多いインデント幅にそろえる。
+   * 揃え型より前の前処理として走らせる。
+   * =======================================================*/
+
+  // 行頭の空白・タブ列を取り出し、タブ展開後の表示幅を返す
+  function leadingIndentWidth(line, tabWidth) {
+    var i = 0;
+    while (i < line.length && (line[i] === ' ' || line[i] === '\t')) i++;
+    return displayWidth(expandTabs(line.slice(0, i), tabWidth));
+  }
+
+  // 非空行のインデント幅の最頻値。同数のときは小さいほう(余計に字下げしない)
+  function majorityIndentWidth(lines, tabWidth) {
+    var tally = {};
+    var found = false;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === '') continue;
+      var w = leadingIndentWidth(lines[i], tabWidth);
+      tally[w] = (tally[w] || 0) + 1;
+      found = true;
+    }
+    if (!found) return 0;
+    var best = -1, bestW = 0;
+    for (var key in tally) {
+      if (!Object.prototype.hasOwnProperty.call(tally, key)) continue;
+      var w2 = parseInt(key, 10);
+      if (tally[w2] > best || (tally[w2] === best && w2 < bestW)) { best = tally[w2]; bestW = w2; }
+    }
+    return bestW;
+  }
+
+  // 非空行の行頭インデントを最頻値ぶんの半角スペースに統一する(空行はそのまま)
+  function normalizeIndentLines(lines, tabWidth) {
+    var pad = new Array(majorityIndentWidth(lines, tabWidth) + 1).join(String.fromCharCode(32));
+    return lines.map(function (l) {
+      if (l.trim() === '') return l;
+      var i = 0;
+      while (i < l.length && (l[i] === ' ' || l[i] === '\t')) i++;
+      return pad + l.slice(i);
+    });
+  }
+
+  /* =========================================================
    * C. 引用符の簡易走査ヘルパ
    * =======================================================*/
 
@@ -741,7 +785,8 @@
       tabWidth: 4,
       alignEquals: true,
       separators: DEFAULT_SEPARATORS,
-      lineEnding: 'auto'
+      lineEnding: 'auto',
+      normalizeIndent: false
     };
   }
 
@@ -755,7 +800,8 @@
       alignEquals: (o.alignEquals == null) ? true : !!o.alignEquals,
       separators: (o.separators == null) ? DEFAULT_SEPARATORS : o.separators,
       lineEnding: o.lineEnding || 'auto',
-      detectedLineEnding: o.detectedLineEnding || 'LF'
+      detectedLineEnding: o.detectedLineEnding || 'LF',
+      normalizeIndent: !!o.normalizeIndent
     };
   }
 
@@ -763,6 +809,12 @@
     var opts = normalizeOptions(options);
     var normalized = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     var lines = normalized.split('\n');
+
+    // v1.4: 行頭インデントの正規化(オプション)。列分割より前に効かせる
+    if (opts.normalizeIndent) {
+      lines = normalizeIndentLines(lines, opts.tabWidth);
+      normalized = lines.join('\n');
+    }
 
     var mode = opts.mode;
     if (mode === 'auto') mode = detectMode(normalized);
@@ -798,6 +850,8 @@
     charWidth: charWidth,
     displayWidth: displayWidth,
     displayWidthTabs: displayWidthTabs,
+    majorityIndentWidth: majorityIndentWidth,
+    normalizeIndentLines: normalizeIndentLines,
     parseSeparators: parseSeparators,
     splitLine: splitLine,
     splitComment: splitComment,
@@ -834,6 +888,7 @@
     var gapInput = document.getElementById('gap');
     var tabWidthInput = document.getElementById('tabWidth');
     var alignEqInput = document.getElementById('alignEquals');
+    var normIndentInput = document.getElementById('normalizeIndent');
     var sepInput = document.getElementById('separators');
     var sepField = document.getElementById('sep-field');
     var sepResetBtn = document.getElementById('sep-reset');
@@ -865,6 +920,7 @@
         gap: gapInput ? parseInt(gapInput.value, 10) || 1 : 1,
         tabWidth: tabWidthInput ? parseInt(tabWidthInput.value, 10) || 4 : 4,
         alignEquals: alignEqInput ? alignEqInput.checked : true,
+        normalizeIndent: normIndentInput ? normIndentInput.checked : false,
         separators: sepInput ? sepInput.value : DEFAULT_SEPARATORS,
         lineEnding: lineEndingSel ? lineEndingSel.value : 'auto',
         detectedLineEnding: state.detectedLineEnding
@@ -943,6 +999,7 @@
     if (gapInput) gapInput.addEventListener('input', function () { state.gapTouched = true; run(); });
     if (tabWidthInput) tabWidthInput.addEventListener('input', run);
     if (alignEqInput) alignEqInput.addEventListener('change', run);
+    if (normIndentInput) normIndentInput.addEventListener('change', run);
     if (sepInput) sepInput.addEventListener('input', run);
     if (lineEndingSel) lineEndingSel.addEventListener('change', run);
 
@@ -996,6 +1053,7 @@
       if (gapInput) gapInput.value = d.gap;
       if (tabWidthInput) tabWidthInput.value = d.tabWidth;
       if (alignEqInput) alignEqInput.checked = d.alignEquals;
+      if (normIndentInput) normIndentInput.checked = d.normalizeIndent;
       if (sepInput) sepInput.value = d.separators;
       if (lineEndingSel) lineEndingSel.value = d.lineEnding;
       updateFillUI();
