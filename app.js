@@ -877,6 +877,26 @@
 
   if (typeof document === 'undefined') return;
 
+  // 揃え型ごとの説明文と、実際にこのツールで整形した短い実例(v1.4)
+  var MODE_LABEL = {
+    code: 'コメント揃え',
+    full: '全部揃え',
+    paren: '関数・括弧揃え',
+    table: '表揃え'
+  };
+  var MODE_DESC = {
+    code: 'コード部分はそのままで、行末コメント(// # /*)の桁だけを揃えます。',
+    full: '単語や = の列を揃えたうえで、コメント開始と */ まで揃えます。',
+    paren: '( ) ; の桁を揃えます。関数名の長さが違う行を並べるときに。',
+    table: '区切り欄に従って列を揃えます。Excel から貼った表など。'
+  };
+  var MODE_SAMPLE = {
+    code: 'a = 1;    // 速度' + '\n' + 'bbb = 22; // 加速度',
+    full: 'int  a   = 1;  // 速度' + '\n' + 'long bbb = 22; // 加速度',
+    paren: 'strncpy(d, n   );' + '\n' + 'memcpy (d, s, n);',
+    table: '名前       点数' + '\n' + '田中       90' + '\n' + 'Alexander  100'
+  };
+
   function wireUp() {
     var input = document.getElementById('input');
     var output = document.getElementById('output');
@@ -898,6 +918,7 @@
     var copyBtn = document.getElementById('copy');
     var modeInfo = document.getElementById('mode-info');
     var modeHint = document.getElementById('mode-hint');
+    var modeExample = document.getElementById('mode-example');
     var leInfo = document.getElementById('le-info');
     var tabNote = document.getElementById('tab-note');
     var gapField = document.getElementById('gap-field');
@@ -960,18 +981,12 @@
         state.lastOutput = TateAlign.format(input.value, opts);
         output.value = state.lastOutput;
 
-        if (modeHint) {
-          var MODE_HINTS = {
-            code: '行末コメント(// # /*)の桁を揃えます',
-            full: '単語列・=・コメント・*/ までまとめて揃えます',
-            paren: '( ) ; とコメントの桁を揃えます(関数呼び出し向け)',
-            table: '区切り欄に従って列を揃えます'
-          };
-          modeHint.textContent = (opts.mode === 'auto') ? '' : (MODE_HINTS[opts.mode] || '');
-        }
+        // 選択中(自動判定なら判定結果)の揃え型の説明と実例を出す
+        if (modeHint) modeHint.textContent = MODE_DESC[resolvedMode] || '';
+        if (modeExample) modeExample.textContent = MODE_SAMPLE[resolvedMode] || '';
         if (modeInfo) {
           modeInfo.textContent = (opts.mode === 'auto')
-            ? '自動判定: ' + (resolvedMode === 'code' ? 'コードモード' : '表モード')
+            ? '自動判定: ' + (MODE_LABEL[resolvedMode] || resolvedMode)
             : '';
         }
         if (leInfo) {

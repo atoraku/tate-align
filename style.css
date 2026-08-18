@@ -170,6 +170,31 @@ button:hover { border-color: var(--accent); }
 }
 .hint.warn { color: var(--warn); background: var(--warn-bg); padding: 0.4rem 0.5rem; border-radius: 6px; }
 
+.mode-example {
+  margin-top: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-alt);
+  overflow: hidden;
+}
+.mode-example-label {
+  display: block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+#mode-example {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text);
+}
+
 .opt.disabled { opacity: 0.5; }
 input:disabled { cursor: not-allowed; }
 button:disabled { cursor: not-allowed; }
