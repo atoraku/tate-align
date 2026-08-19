@@ -354,6 +354,16 @@
    * コメント分割 / 代入= 検出(引用符外)
    * =======================================================*/
 
+  // v1.5: C/C++ のプリプロセッサ指令。行頭(空白を除く)の # がこれらに続くときは
+  // コメントではなくコードとして扱う(#define の定数表が揃わない問題への対応)。
+  // 行中の # (例: x = 1 # メモ)や、指令でない # (例: # コメント)は従来どおりコメント。
+  var PREPROC_RE = /^#[ \t]*(define|include|undef|ifdef|ifndef|elif|else|endif|if|line|error|warning|pragma)\b/;
+
+  function isPreprocessorHash(line, i) {
+    if (line.slice(0, i).trim() !== '') return false; // 行頭の # でなければ対象外
+    return PREPROC_RE.test(line.slice(i));
+  }
+
   // コード部 / コメント部に分割(区切りは引用符外の最初の // または # または /*)
   // 戻り値 isBlock: コメントが /* 始まりのブロックコメントか(後方互換: 既存呼び出しは code/comment のみ参照)
   function splitComment(line) {
@@ -375,6 +385,7 @@
         return { code: line.slice(0, i), comment: line.slice(i), isBlock: true };
       }
       if (ch === '#') {
+        if (isPreprocessorHash(line, i)) continue; // プリプロセッサ指令はコード扱い
         return { code: line.slice(0, i), comment: line.slice(i), isBlock: false };
       }
     }
@@ -463,7 +474,10 @@
       var code = rstrip(pt.code);
       var cw = displayWidthTabs(code, tw);
       var joined;
-      if (opts.fill === 'tab') {
+      if (maxCode === 0) {
+        // 対象行すべてがコメントだけ(コード部が空)。行頭に空白を入れない
+        joined = pt.comment;
+      } else if (opts.fill === 'tab') {
         var T = nextTabStop(maxCode, tw);
         // 現在位置 cw から T(タブ幅の倍数)へ進むのに必要なタブ本数
         var tabs = (T - Math.floor(cw / tw) * tw) / tw;

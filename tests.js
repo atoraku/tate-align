@@ -650,6 +650,61 @@
     assertEqual(T.defaultOptions().normalizeIndent, false);
   });
 
+  /* ========== ⑨ v1.5 追加分(プリプロセッサ指令をコード扱い) ========== */
+
+  test('⑨ splitComment: #define / #include などはコメントにしない', function () {
+    assertEqual(T.splitComment('#define A 1').comment, '');
+    assertEqual(T.splitComment('#define A 1').code, '#define A 1');
+    assertEqual(T.splitComment('#include <stdio.h>').comment, '');
+    assertEqual(T.splitComment('#ifdef DEBUG').comment, '');
+    assertEqual(T.splitComment('#endif').comment, '');
+    assertEqual(T.splitComment('#pragma once').comment, '');
+    // # と指令の間に空白があっても指令として扱う
+    assertEqual(T.splitComment('#  define A 1').comment, '');
+    // 行頭の空白は許容
+    assertEqual(T.splitComment('  #define A 1').comment, '');
+  });
+
+  test('⑨ splitComment: 指令でない # は従来どおりコメント', function () {
+    assertEqual(T.splitComment('# これはコメント').code, '');
+    assertEqual(T.splitComment('# これはコメント').comment, '# これはコメント');
+    assertEqual(T.splitComment('x = 1 # メモ').code, 'x = 1 ');
+    assertEqual(T.splitComment('x = 1 # メモ').comment, '# メモ');
+    // 行中の #define はコメント(行頭ではないため)
+    assertEqual(T.splitComment('x = 1 #define A').comment, '#define A');
+  });
+
+  test('⑨ #define 行の // コメントはコメントとして拾う', function () {
+    var p = T.splitComment('#define MAX 3 // 最大');
+    assertEqual(p.code, '#define MAX 3 ');
+    assertEqual(p.comment, '// 最大');
+  });
+
+  test('⑨ detectMode: #define の並びは表モードになる', function () {
+    assertEqual(T.detectMode('#define A 1\n#define BB 22\n#define CCC 333'), 'table');
+    assertEqual(T.detectMode('#include <a.h>\n#include <bb.h>'), 'table');
+  });
+
+  // 報告のケース:マクロの定数表が揃うこと(行頭に余計な空白も入らない)
+  test('⑨ format: #define の定数表が揃う', function () {
+    var input = '#define MAX_RETRY 3\n#define TIMEOUT_MS 1000\n#define BUF_SIZE 256';
+    var expected = '#define MAX_RETRY  3\n#define TIMEOUT_MS 1000\n#define BUF_SIZE   256';
+    assertEqual(T.format(input, { mode: 'auto', fill: 'space', gap: 1, separators: '\\s,\\t' }), expected);
+  });
+
+  test('⑨ format: #include が揃う', function () {
+    var input = '#include <stdio.h>\n#include <string.h>';
+    var out = T.format(input, { mode: 'auto', fill: 'space', gap: 1, separators: '\\s,\\t' });
+    // 行頭に空白が入らないこと
+    out.split('\n').forEach(function (l) { assertEqual(l.slice(0, 1), '#'); });
+  });
+
+  // 全行がコメントだけのとき、行頭に無駄な空白を入れない
+  test('⑨ 全行コメントのみ: 行頭に空白を入れない', function () {
+    assertEqual(T.format('// aaa\n// bb', { mode: 'code', fill: 'space', gap: 1, alignEquals: false }), '// aaa\n// bb');
+    assertEqual(T.format('# メモ1\n# メモ2', { mode: 'code', fill: 'space', gap: 1, alignEquals: false }), '# メモ1\n# メモ2');
+  });
+
   /* ========== レンダリング ========== */
 
   var passed = results.filter(function (r) { return r.ok; }).length;
