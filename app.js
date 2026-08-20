@@ -113,6 +113,18 @@
     return out;
   }
 
+  // v1.5.1: 埋め方式がタブのとき、行頭インデントもタブで表現する。
+  // (整形の途中ではインデントを空白に展開して幅を計算するので、最後に戻す)
+  // タブ幅ぶん埋まるところまでタブにし、端数は半角スペースで残す = 表示幅は不変。
+  function indentToTabs(line, tabWidth) {
+    var i = 0;
+    while (i < line.length && line[i] === ' ') i++;
+    if (i === 0) return line;
+    var tabs = Math.floor(i / tabWidth);
+    var rest = i - tabs * tabWidth;
+    return new Array(tabs + 1).join('\t') + new Array(rest + 1).join(' ') + line.slice(i);
+  }
+
   /* =========================================================
    * v1.4: 行頭インデントの正規化(オプション・既定オフ)
    * 行頭の空白幅がバラバラな入力を、いちばん多いインデント幅にそろえる。
@@ -848,6 +860,11 @@
       outLines = formatTable(lines, opts, seps, tabIsIndent);
     }
 
+    // v1.5.1: 埋め方式がタブなら、行頭インデントもタブに戻す
+    if (opts.fill === 'tab') {
+      outLines = outLines.map(function (l) { return indentToTabs(l, opts.tabWidth); });
+    }
+
     var joined = outLines.join('\n');
 
     var le = opts.lineEnding;
@@ -864,6 +881,7 @@
     charWidth: charWidth,
     displayWidth: displayWidth,
     displayWidthTabs: displayWidthTabs,
+    indentToTabs: indentToTabs,
     majorityIndentWidth: majorityIndentWidth,
     normalizeIndentLines: normalizeIndentLines,
     parseSeparators: parseSeparators,

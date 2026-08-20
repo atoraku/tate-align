@@ -705,6 +705,47 @@
     assertEqual(T.format('# メモ1\n# メモ2', { mode: 'code', fill: 'space', gap: 1, alignEquals: false }), '# メモ1\n# メモ2');
   });
 
+  /* ========== ⑩ v1.5.1 追加分(タブ埋めのとき行頭インデントもタブ) ========== */
+
+  test('⑩ indentToTabs: タブ幅ぶんはタブ、端数は空白', function () {
+    assertEqual(T.indentToTabs('    abc', 4), '\tabc');
+    assertEqual(T.indentToTabs('        abc', 4), '\t\tabc');
+    assertEqual(T.indentToTabs('      abc', 4), '\t  abc');  // 6 = タブ1 + 空白2
+    assertEqual(T.indentToTabs('  abc', 4), '  abc');                // 4未満はそのまま
+    assertEqual(T.indentToTabs('abc', 4), 'abc');                    // インデントなし
+    assertEqual(T.indentToTabs('\tabc', 4), '\tabc'); // すでにタブなら不変
+  });
+
+  // 報告のケース:埋め方式=タブなら行頭インデントもタブになる
+  test('⑩ 埋め方式タブ: 行頭インデントがタブになる', function () {
+    var input = '\tint a = 0; // 速度\n\tint speed = 10; // 加速度';
+    var out = T.format(input, { mode: 'code', fill: 'tab', gap: 1, tabWidth: 4, alignEquals: false });
+    out.split('\n').forEach(function (l) { assertEqual(l.slice(0, 1), '\t'); });
+  });
+
+  test('⑩ 埋め方式スペース: 行頭インデントは空白のまま', function () {
+    var input = '\tint a = 0; // 速度\n\tint speed = 10; // 加速度';
+    var out = T.format(input, { mode: 'code', fill: 'space', gap: 1, tabWidth: 4, alignEquals: false });
+    out.split('\n').forEach(function (l) { assertEqual(l.slice(0, 4), '    '); });
+  });
+
+  // タブに変えても表示幅(桁)が変わらないこと
+  test('⑩ タブ版とスペース版で展開後のインデント幅が一致', function () {
+    var input = '      char name[20]; // 氏名\n      int age; // 年齢';
+    var base = { mode: 'code', gap: 1, tabWidth: 4, alignEquals: false };
+    var sp = T.format(input, { mode: 'code', fill: 'space', gap: 1, tabWidth: 4, alignEquals: false });
+    var tb = T.format(input, { mode: 'code', fill: 'tab', gap: 1, tabWidth: 4, alignEquals: false });
+    var spLead = sp.split('\n').map(function (l) { return l.match(/^ */)[0].length; });
+    var tbLead = tb.split('\n').map(function (l) { return expandTabs(l, 4).match(/^ */)[0].length; });
+    assertEqual(JSON.stringify(tbLead), JSON.stringify(spLead));
+  });
+
+  test('⑩ 表揃えでもタブ埋めなら行頭インデントがタブ', function () {
+    var input = '\tchar name[20];\n\tint age;\n\tdouble gpa;';
+    var out = T.format(input, { mode: 'table', fill: 'tab', gap: 1, tabWidth: 4, separators: '\\s,\\t' });
+    out.split('\n').forEach(function (l) { assertEqual(l.slice(0, 1), '\t'); });
+  });
+
   /* ========== レンダリング ========== */
 
   var passed = results.filter(function (r) { return r.ok; }).length;
